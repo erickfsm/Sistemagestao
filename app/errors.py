@@ -1,5 +1,3 @@
-# app/errors.py
-
 from flask import jsonify
 from werkzeug.exceptions import HTTPException
 
@@ -25,10 +23,11 @@ def register_error_handlers(app):
         response.status_code = 500
         return response
 
-    from flask_jwt_extended.exceptions import NoAuthorizationError, InvalidHeaderError, DecodeError, ExpiredSignatureError
+    from flask_jwt_extended.exceptions import NoAuthorizationError, InvalidHeaderError, JWTDecodeError
+    from jwt.exceptions import ExpiredSignatureError
     @app.errorhandler(NoAuthorizationError)
     @app.errorhandler(InvalidHeaderError)
-    @app.errorhandler(DecodeError)
+    @app.errorhandler(JWTDecodeError)
     @app.errorhandler(ExpiredSignatureError)
     def handle_jwt_exceptions(e):
         return jsonify({"error": "Erro de autenticação JWT", "message": str(e), "code": 401}), 401
