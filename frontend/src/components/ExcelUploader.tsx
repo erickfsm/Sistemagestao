@@ -4,6 +4,7 @@ const ExcelUploader = () => {
   const [file, setFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [isError, setIsError] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -14,17 +15,49 @@ const ExcelUploader = () => {
   const handleUpload = async () => {
     if (!file) {
       setMessage('Por favor, selecione um arquivo.');
+      setIsError(true);
       return;
     }
 
     setIsLoading(true);
     setMessage('');
+    setIsError(false);
 
-    setTimeout(() => {
+    const token = localStorage.getItem('accessToken');
+    if (!token) {
+      setMessage('Você não está autenticado.');
+      setIsError(true);
       setIsLoading(false);
-      setMessage(`Planilha "${file.name}" importada com sucesso!`);
-      setFile(null);
-    }, 2000);
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await fetch('http://127.0.0.1:5000/api/entregas/importar-excel', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setMessage(data.message);
+        setFile(null); // Limpa o arquivo selecionado após o sucesso
+      } else {
+        const errorData = await response.json();
+        setMessage(errorData.mensagem || 'Erro ao importar planilha. Verifique o formato.');
+        setIsError(true);
+      }
+    } catch (error) {
+      setMessage('Erro de conexão com a API. Verifique se o backend está rodando.');
+      setIsError(true);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -56,7 +89,7 @@ const ExcelUploader = () => {
       </button>
 
       {message && (
-        <p className="mt-4 text-center text-sm text-gray-600">
+        <p className={`mt-4 text-center text-sm ${isError ? 'text-red-600' : 'text-gray-600'}`}>
           {message}
         </p>
       )}

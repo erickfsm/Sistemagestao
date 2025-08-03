@@ -1,39 +1,33 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from './components/Header.tsx';
 import Dashboard from './pages/Dashboard.tsx';
 import UploadPage from './pages/UploadPage.tsx';
 import DeliveriesPage from './pages/DeliveriesPage.tsx';
 import LoginPage from './pages/LoginPage.tsx';
+import FinalizePage from './pages/FinalizePage.tsx';
+import DevolutionsPage from './pages/DevolutionsPage.tsx';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('home');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
     const storedToken = localStorage.getItem('accessToken');
     if (storedToken) {
-      setToken(storedToken);
       setIsLoggedIn(true);
     }
   }, []);
 
-  const handleLoginSuccess = (newToken: string) => {
-    localStorage.setItem('accessToken', newToken);
-    setToken(newToken);
+  const handleLoginSuccess = () => {
     setIsLoggedIn(true);
+    setCurrentPage('home');
   };
 
   const handleLogout = () => {
     localStorage.removeItem('accessToken');
-    setToken(null);
     setIsLoggedIn(false);
     setCurrentPage('home');
   };
-
-  if (!isLoggedIn) {
-    return <LoginPage onLogin={handleLoginSuccess} />;
-  }
 
   const renderPage = () => {
     switch (currentPage) {
@@ -43,10 +37,18 @@ function App() {
         return <UploadPage />;
       case 'deliveries':
         return <DeliveriesPage />;
+      case 'finalize':
+        return <FinalizePage />;
+      case 'devolutions':
+        return <DevolutionsPage />;
       default:
         return <Dashboard />;
     }
   };
+
+  if (!isLoggedIn) {
+    return <LoginPage onLogin={handleLoginSuccess} />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-100">

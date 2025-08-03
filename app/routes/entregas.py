@@ -1,21 +1,21 @@
-from datetime import datetime, date
-import re 
+from datetime import datetime, date, timedelta
 from workalendar.america import Brazil
 from flask import Blueprint, request, jsonify
-from app.models.comprovante import Comprovante
-from app.models.entrega import Entrega
 from app.extensions import db
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from app.models.motorista import Motorista
 from app.utils.decorators import role_required
+import pandas as pd
+import io
+import re
+
+from app.models.motorista import Motorista
+from app.models.comprovante import Comprovante
+from app.models.entrega import Entrega
+from app.models.devolucao import Devolucao
 
 entrega_bp = Blueprint('entregas', __name__, url_prefix='/api/entregas')
 
 def extrair_numero_dias(prazo_str: str) -> int | None:
-    """
-    Extrai um numero inteiro de uma string que representa um prazo em dias.
-    Exemplo: "5 dias" -> 5, "10 dias" -> 10
-    """
     if not isinstance(prazo_str, str):
         return None
     match = re.search(r'\d+', prazo_str)
@@ -24,21 +24,17 @@ def extrair_numero_dias(prazo_str: str) -> int | None:
     return None
 
 def calcular_data_final_util(data_inicial: date, quantidade_dias_uteis: int, feriados_customizados: list[date] = None) -> date | None:
-    """
-    Calcula a data final considerando apenas os dias úteis.
-    """
     if not isinstance(data_inicial, date) or not isinstance(quantidade_dias_uteis, int) or quantidade_dias_uteis < 0:
         return None
     
     cal = Brazil()
-
     if feriados_customizados:
         for holiday_date in feriados_customizados:
             if isinstance(holiday_date, date):
                 cal.add_holiday((holiday_date.year, holiday_date.month, holiday_date.day, "Feriado Customizado"))
             else:
                 print(f'Feriado {holiday_date} não é uma data válida. Ignorando.')
-   
+    
     try:
         data_final = cal.add_working_days(data_inicial, quantidade_dias_uteis)
         return data_final
@@ -46,11 +42,78 @@ def calcular_data_final_util(data_inicial: date, quantidade_dias_uteis: int, fer
         print(f'Erro ao calcular data final: {e}')
         return None
 
-# --- Endpoints ---
+def safe_date_converter(date_val, format_str='%Y-%m-%d %H:%M:%S'):
+    if isinstance(date_val, (int, float)):
+        return pd.to_datetime(date_val, unit='D', origin='1899-12-30').to_pydatetime()
+    elif isinstance(date_val, date) and not isinstance(date_val, datetime):
+        return datetime.combine(date_val, datetime.min.time())
+    elif isinstance(date_val, str):
+        return datetime.strptime(date_val, format_str)
+    else:
+        return date_val
+
+def criar_entrega_com_dados(data: dict):
+    dt_fat = safe_date_converter(data['DTFAT'])
+    dt_carregamento = safe_date_converter(data['DTCARREGAMENTO'])
+
+    data_finalizacao = None
+    if data.get('DATAFINALIZACAO'):
+        data_finalizacao = safe_date_converter(data['DATAFINALIZACAO'])
+    
+    agendamento = None
+    if data.get('AGENDAMENTO'):
+        agendamento = safe_date_converter(data['AGENDAMENTO'])
+
+    previsao_entrega = None
+    if dt_carregamento and 'PRAZOENTREGA' in data and isinstance(data['PRAZOENTREGA'], int):
+        data_prev_entrega_date = calcular_data_final_util(
+            data_inicial=dt_carregamento.date(),
+            quantidade_dias_uteis=data['PRAZOENTREGA']
+        )
+        if data_prev_entrega_date:
+            previsao_entrega = datetime.combine(data_prev_entrega_date, dt_carregamento.time())
+    else:
+        raise ValueError('DTCARREGAMENTO ou PRAZOENTREGA inválidos.')
+
+    nova_entrega = Entrega(
+        CODFILIAL=int(data['CODFILIAL']),
+        DTFAT=dt_fat,
+        DTCARREGAMENTO=dt_carregamento,
+        ROMANEIO=int(data['ROMANEIO']),
+        TIPOVENDA=int(data['TIPOVENDA']),
+        NUMNOTA=int(data['NUMNOTA']),
+        NUMPED=int(data['NUMPED']),
+        CODCLI=int(data['CODCLI']),
+        CLIENTE=str(data['CLIENTE']),
+        MUNICIPIO=str(data['MUNICIPIO']),
+        UF=str(data['UF']),
+        EMAIL=data.get('EMAIL'),
+        TELCOM=data.get('TELCOM'),
+        EMAIL_1=data.get('EMAIL_1'),
+        CODFORNECFRETE=data.get('CODFORNECFRETE'),
+        TRANSPORTADORA=data.get('TRANSPORTADORA'),
+        VLTOTAL=float(data['VLTOTAL']),
+        NUMVOLUME=int(data['NUMVOLUME']),
+        TOTPESO=float(data['TOTPESO']),
+        PRAZOENTREGA=int(data['PRAZOENTREGA']),
+        CHAVENFE=str(data['CHAVENFE']),
+        DATAFINALIZACAO=data_finalizacao,
+        AGENDAMENTO=agendamento,
+        PREVISAOENTREGA=previsao_entrega,
+        motorista_id=data.get('motorista_id')
+    )
+    
+    if nova_entrega.CODFORNECFRETE is not None:
+        nova_entrega.CODFORNECFRETE = int(nova_entrega.CODFORNECFRETE)
+    if nova_entrega.motorista_id is not None:
+        nova_entrega.motorista_id = int(nova_entrega.motorista_id)
+        
+    db.session.add(nova_entrega)
+    return nova_entrega
 
 @entrega_bp.route('/', methods=['POST'])
-#@jwt_required
-#@role_required(['agente', 'admin'])
+@jwt_required()
+@role_required(['agente', 'admin'])
 def create_entrega():
     data = request.get_json()
 
@@ -67,72 +130,72 @@ def create_entrega():
         return jsonify({"message": "Chave NFe já cadastrada."}), 409
 
     try:
-
-        dt_fat = datetime.strptime(data['DTFAT'], '%Y-%m-%d %H:%M:%S')
-        dt_carregamento = datetime.strptime(data['DTCARREGAMENTO'], '%Y-%m-%d %H:%M:%S')
-
-        data_finalizacao = None
-        if data.get('DATAFINALIZACAO'):
-            data_finalizacao = datetime.strptime(data['DATAFINALIZACAO'], '%Y-%m-%d %H:%M:%S')
-        
-        agendamento = None
-        if data.get('AGENDAMENTO'):
-            agendamento = datetime.strptime(data['AGENDAMENTO'], '%Y-%m-%d %H:%M:%S')
-
-        previsao_entrega = None
-        if dt_carregamento and 'PRAZOENTREGA' in data and isinstance(data['PRAZOENTREGA'], int):
-            data_prev_entrega_date = calcular_data_final_util(
-                data_inicial=dt_carregamento.date(),
-                quantidade_dias_uteis=data['PRAZOENTREGA']
-            )
-            if data_prev_entrega_date:
-                previsao_entrega = datetime.combine(data_prev_entrega_date, dt_carregamento.time())
-        else:
-            return jsonify({'message': 'PREVISAOENTREGA não pode ser calculada (DTCARREGAMENTO ou PRAZOENTREGA inválidos).'}), 400
-
-        nova_entrega = Entrega(
-            CODFILIAL=int(data['CODFILIAL']),
-            DTFAT=dt_fat,
-            DTCARREGAMENTO=dt_carregamento,
-            ROMANEIO=int(data['ROMANEIO']),
-            TIPOVENDA=int(data['TIPOVENDA']),
-            NUMNOTA=int(data['NUMNOTA']),
-            NUMPED=int(data['NUMPED']),
-            CODCLI=int(data['CODCLI']),
-            CLIENTE=str(data['CLIENTE']),
-            MUNICIPIO=str(data['MUNICIPIO']),
-            UF=str(data['UF']),
-            EMAIL=data.get('EMAIL'),
-            TELCOM=data.get('TELCOM'),
-            EMAIL_1=data.get('EMAIL_1'),
-            CODFORNECFRETE=data.get('CODFORNECFRETE'),
-            TRANSPORTADORA=data.get('TRANSPORTADORA'),
-            VLTOTAL=float(data['VLTOTAL']),
-            NUMVOLUME=int(data['NUMVOLUME']),
-            TOTPESO=float(data['TOTPESO']),
-            PRAZOENTREGA=int(data['PRAZOENTREGA']),
-            CHAVENFE=str(data['CHAVENFE']),
-            DATAFINALIZACAO=data_finalizacao,
-            AGENDAMENTO=agendamento,
-            PREVISAOENTREGA=previsao_entrega,
-            motorista_id=data.get('motorista_id')
-        )
-        
-        if nova_entrega.CODFORNECFRETE is not None:
-            nova_entrega.CODFORNECFRETE = int(nova_entrega.CODFORNECFRETE)
-        if nova_entrega.motorista_id is not None:
-            nova_entrega.motorista_id = int(nova_entrega.motorista_id)
-
-        db.session.add(nova_entrega)
+        nova_entrega = criar_entrega_com_dados(data)
         db.session.commit()
         return jsonify({"message": "Entrega criada com sucesso!", "entrega": nova_entrega.to_dict()}), 201
     except ValueError as ve:
         db.session.rollback()
-
         return jsonify({"message": f"Erro de formato de dados: {str(ve)}. Verifique tipos e formatos de data (YYYY-MM-DD HH:MM:SS)."}), 400
     except Exception as e:
         db.session.rollback()
         return jsonify({"message": f"Erro ao criar entrega: {str(e)}"}), 500
+
+@entrega_bp.route('/importar-excel', methods=['POST'])
+@jwt_required()
+@role_required(['admin'])
+def importar_excel():
+    if 'file' not in request.files:
+        return jsonify({"mensagem": "Nenhum arquivo enviado"}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"mensagem": "Nenhum arquivo selecionado"}), 400
+    
+    filename_lower = file.filename.lower()
+    df = None
+
+    try:
+        if filename_lower.endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(file, engine='openpyxl')
+        elif filename_lower.endswith('.csv'):
+            file_stream = io.StringIO(file.stream.read().decode('utf-8'))
+            df = pd.read_csv(file_stream)
+        else:
+            return jsonify({"message": "Formato de arquivo não suportado. Use .xlsx, .xls ou .csv."}), 400
+    except Exception as e:
+        return jsonify({"mensagem": f"Erro ao ler o arquivo: {str(e)}"}), 500
+    
+    try:
+        required_excel_cols = ["CODFILIAL", "DTFAT", "DTCARREGAMENTO", "ROMANEIO", "TIPOVENDA", 
+                              "NUMNOTA", "NUMPED", "CODCLI", "CLIENTE", "MUNICIPIO", "UF", 
+                              "VLTOTAL", "NUMVOLUME", "TOTPESO", "PRAZOENTREGA", "CHAVENFE"]
+        
+        if not all(col in df.columns for col in required_excel_cols):
+            return jsonify({"message": "Arquivo Excel não possui todas as colunas obrigatórias."}), 400
+
+        entregas_importadas = []
+        for index, row in df.iterrows():
+            data_entrega = row.to_dict()
+            
+            if Entrega.query.filter_by(CHAVENFE=data_entrega['CHAVENFE']).first():
+                continue
+
+            for date_field in ['DTFAT', 'DTCARREGAMENTO', 'DATAFINALIZACAO', 'AGENDAMENTO']:
+                if isinstance(data_entrega.get(date_field), datetime):
+                    data_entrega[date_field] = data_entrega[date_field].strftime('%Y-%m-%d %H:%M:%S')
+
+            nova_entrega = criar_entrega_com_dados(data_entrega)
+            entregas_importadas.append(nova_entrega)
+        
+        db.session.commit()
+        return jsonify({
+            "message": f"{len(entregas_importadas)} entregas importadas com sucesso!",
+            "entregas": [e.to_dict() for e in entregas_importadas]
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"mensagem": f"Erro ao processar o arquivo: {str(e)}"}), 500
 
 @entrega_bp.route('/<int:id>', methods=['GET'])
 @jwt_required()
@@ -144,7 +207,7 @@ def buscar_entrega_por_id(entrega_id):
     return jsonify(entrega.to_dict()), 200
 
 @entrega_bp.route('/previsao/<int:entrega_id>', methods=['POST'])
-@jwt_required
+@jwt_required()
 @role_required(['agente', 'admin'])
 def calcular_e_salva_previsao_entrega(entrega_id):
     entrega = Entrega.query.get(entrega_id)
@@ -152,8 +215,8 @@ def calcular_e_salva_previsao_entrega(entrega_id):
         return jsonify({'error': 'Entrega não encontrada'}), 404
 
     feriados_adicionais = [
-        date(2025, 1, 1),  # Exemplo de feriado adicional
-        date(2025, 11, 20)  # Outro exemplo
+        date(2025, 1, 1),
+        date(2025, 11, 20)
     ]
 
     response_data = {}
@@ -186,7 +249,7 @@ def calcular_e_salva_previsao_entrega(entrega_id):
             return jsonify(response_data), 200
         except Exception as e:
             db.session.rollback()
-            return jsonify({"erro": f"Erro ao salvar previsão no banco de dados: {e}"}), 500
+            return jsonify({"erro": f'Erro ao salvar previsão no banco de dados: {e}'}), 500
     else:
         response_data['error'] = 'Erro ao calcular a data de previsão de entrega.'
         return jsonify(response_data), 500
@@ -195,28 +258,23 @@ def calcular_e_salva_previsao_entrega(entrega_id):
 @jwt_required()
 @role_required(['motorista', 'agente', 'admin'])
 def finalizar_entrega(entrega_id):
-    entrega = Entrega.query.get(entrega_id)
-    if not entrega:
-        return jsonify({'error': 'Entrega não encontrada'}), 404
-
-    data_recebida = request.get_json()
-    data_finalizacao_str = data_recebida.get('data_finalizacao')
-
-    if not data_finalizacao_str:
-        return jsonify({'error': 'Data de finalização é obrigatória.'}), 400
-    try:
-        finalizacao_dt = datetime.strptime(data_finalizacao_str, '%Y-%m-%d %H:%M:%S')
-    except ValueError:
-        return jsonify({'error': 'Formato de data inválido. Use YYYY-MM-DD HH:MM:SS.'}), 400
+    entrega = Entrega.query.get_or_404(entrega_id)
     
-    entrega.DATAFINALIZACAO = finalizacao_dt
-    db.session.add(entrega)
-    try:
-        db.session.commit()
-        return jsonify(entrega.to_dict()), 200
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': f'Erro ao finalizar entrega: {e}'}), 500
+    comprovante_existente = Comprovante.query.filter_by(entrega_id=id).first()
+    if not comprovante_existente:
+        return jsonify({"erro": "Anexo do canhoto ou ressalva é obrigatório para finalizar."}), 400
+
+    devolucao_existente = Devolucao.query.filter_by(entrega_id=id).first()
+    if devolucao_existente:
+        print(f"A entrega {id} está sendo finalizada e possui uma devolução associada.")
+        pass
+
+    entrega.data_finalizacao = datetime.utcnow()
+    entrega.status = "Finalizada com Devolução" if devolucao_existente else "Finalizada com Sucesso"
+    
+    db.session.commit()
+
+    return jsonify({"mensagem": "Entrega finalizada com sucesso."}), 200
     
 @entrega_bp.route('/<int:entrega_id>/comprovantes', methods=['GET'])
 @jwt_required()
@@ -242,9 +300,6 @@ def listar_comprovantes_por_entrega(entrega_id):
 @role_required(['admin', 'agente'])
 def atribuir_motorista_entrega(entrega_id):
     motorista_logado_id = get_jwt_identity()
-    #if not verificar_role_admin_ou_agente(motorista_logado_id):
-    #    return jsonify({"message": "Permissão negada. Apenas administradores/agentes podem atribuir entregas."}), 403
-
     data = request.get_json()
     motorista_id = data.get('motorista_id')
 
@@ -275,38 +330,50 @@ def listar_todas_entregas():
     query = Entrega.query
 
     status = request.args.get('status')
-    motorista_id = request.args.get('motorista_id', type=int)
+    num_nota = request.args.get('num_nota', type=int)
+    transportadora = request.args.get('transportadora')
     data_inicial_str = request.args.get('data_inicial')
     data_final_str = request.args.get('data_final')
-    # Adicione outros filtros conforme necessário, ex:
-
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 10, type=int)
+    
     if status:
         query = query.filter_by(STATUS=status)
-    
-    if motorista_id:
-        query = query.filter_by(motorista_id=motorista_id)
+
+    if num_nota:
+        query = query.filter_by(NUMNOTA=num_nota)
+
+    if transportadora:
+        query = query.filter(Entrega.TRANSPORTADORA.ilike(f'%{transportadora}%'))
 
     if data_inicial_str:
         try:
             data_inicial = datetime.strptime(data_inicial_str, '%Y-%m-%d').date()
-            query = query.filter(Entrega.DATAINICIOPREVISAO >= data_inicial)
+            query = query.filter(Entrega.DTFAT >= data_inicial)
         except ValueError:
             return jsonify({"message": "Formato de data_inicial inválido. Use YYYY-MM-DD."}), 400
 
     if data_final_str:
         try:
             data_final = datetime.strptime(data_final_str, '%Y-%m-%d').date()
-            query = query.filter(Entrega.DATAFINALPREVISAO <= data_final)
+            data_final_inclusive = data_final + timedelta(days=1)
+            query = query.filter(Entrega.DTFAT < data_final_inclusive)
         except ValueError:
             return jsonify({"message": "Formato de data_final inválido. Use YYYY-MM-DD."}), 400
     
-    entregas = query.all()
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    entregas = pagination.items
 
-    if not entregas:
-        return jsonify({"message": "Nenhuma entrega encontrada com os filtros especificados."}), 404
-    
     feriados_adicionais = [
-        date(2025, 11, 20)  #Dia da Consciência Negra
+        date(2025, 11, 20)
     ]
 
-    return jsonify([entrega.to_dict(feriados_customizados=feriados_adicionais) for entrega in entregas]), 200
+    entregas_json = []
+    for entrega in entregas:
+        if entrega is not None:
+            entregas_json.append(entrega.to_dict(feriados_customizados=feriados_adicionais))
+
+    if not entregas_json:
+        return jsonify([]), 200
+
+    return jsonify(entregas_json), 200

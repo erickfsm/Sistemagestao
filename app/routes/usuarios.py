@@ -20,8 +20,6 @@ def cadastrar_usuario():
     if not all([nome, login, senha]):
         return jsonify({"message": "Todos os campos (nome, login e senha) são obrigatórios."}), 400
 
-    # Validações básicas
-
     if Usuario.query.filter_by(login=login).first():
         return jsonify({"message": "Login já cadastrado."}), 409
     
