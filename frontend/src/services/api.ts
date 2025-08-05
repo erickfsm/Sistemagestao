@@ -24,8 +24,9 @@ const fetchApi = async (endpoint: string, options: RequestInit = {}) => {
   
   if (response.status === 401 || response.status === 403) {
     localStorage.removeItem('accessToken');
-    throw new Error('Não autorizado. Por favor, faça login novamente.');
-  }
+     window.location.href = '/login'; 
+    throw new Error('Sessão expirada. Redirecionando para o login.');
+  }
 
   if (!response.ok) {
     const errorText = await response.text();

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import Header from './components/Header.tsx';
 import Dashboard from './pages/Dashboard.tsx';
 import UploadPage from './pages/UploadPage.tsx';

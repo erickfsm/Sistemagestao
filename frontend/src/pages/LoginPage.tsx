@@ -27,7 +27,7 @@ const LoginPage = ({ onLogin }: { onLogin: (token: string) => void }) => {
       <div className="flex flex-col md:flex-row bg-white rounded-lg shadow-lg overflow-hidden max-w-4xl w-full">
         <div className="md:w-1/2 p-8 flex flex-col justify-center">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-800">GLOBAL HOSPITALAR</h1>
+            <h1 className="text-3xl font-bold text-gray-800">TMS GLOBAL</h1>
             <p className="text-lg text-gray-600">Equipe Transporte</p>
           </div>
           <form onSubmit={handleLogin} className="w-full">

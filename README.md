@@ -1,4 +1,4 @@
-# Sistema de Gestão de Entregas - GLOBAL HOSPITALAR
+# Sistema de Gestão de Entregas - TMS GLOBAL
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/Python-3.10-3776AB?logo=python)
@@ -58,7 +58,7 @@ Siga os passos abaixo para configurar o ambiente de desenvolvimento na sua máqu
 
 ### 1. Clonar o Repositório
 ```bash
-git clone [https://github.com/seu-usuario/Sistemagestao.git](https://github.com/seu-usuario/Sistemagestao.git)
+git clone https://github.com/seu-usuario/Sistemagestao.git
 cd Sistemagestao
 ```
 

@@ -7,8 +7,8 @@ const Header = ({ onNavigate, onLogout }: { onNavigate: (page: string) => void, 
   return (
     <header className="bg-white text-gray-800 p-4 shadow-md flex justify-between items-center sticky top-0 z-10">
       <div className="flex items-center gap-2">
-        <img src="/1000282714.jpg" alt="Logo da Global Hospitalar" className="h-10" />
-        <div className="text-xl font-bold text-gh-orange">GLOBAL HOSPITALAR</div>
+        <img src="/1000282714.jpg" alt="Logo da TMS Global" className="h-10" />
+        <div className="text-xl font-bold text-gh-orange">TMS GLOBAL</div>
       </div>
       
       <div className="md:hidden">
