@@ -4,15 +4,15 @@ import logging
 from datetime import datetime
 from urllib.parse import urljoin 
 
-from config.settings import settings 
+from config import Config
 
 logger = logging.getLogger(__name__)
 
 class SSWAPI:
     def __init__(self):
-        self.base_url = settings.SSW_BASE_URL
-        self.senha_ampla = settings.SSW_API_PASSWORD_AMPLA 
-        self.senha_tg = settings.SSW_API_PASSWORD_TG 
+        self.base_url = Config.SSW_BASE_URL
+        self.senha_ampla = Config.SSW_API_PASSWORD_AMPLA 
+        self.senha_tg = Config.SSW_API_PASSWORD_TG 
 
     def rastrear_nf(self, num_nota: str, cnpj_filial: str, tipo_ssw_servico: str = "AMPLA") -> dict | None:
  

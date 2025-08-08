@@ -8,12 +8,12 @@ class Devolucao(db.Model):
     entrega_id = db.Column(db.Integer, db.ForeignKey('entregas.id'), nullable=False)
     motorista_id = db.Column(db.Integer, db.ForeignKey('motoristas.id'), nullable=False)
  
-    tipo_devolucao = db.Column(db.String(20), nullable=True) #ex: 'total', 'parcial'
-    motivo = db.Column(db.String(255), nullable=True) #ex: 'cliente ausente', 'não solicitado', etc.
-    observacoes = db.Column(db.String(500), nullable=True) #mais detalhes se houver
+    tipo_devolucao = db.Column(db.String(20), nullable=True)
+    motivo = db.Column(db.String(255), nullable=True)
+    observacoes = db.Column(db.String(500), nullable=True)
     data_devolucao = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    data_criacao = db.Column(db.DateTime, default=datetime.utcnow, nullable=False) # Para auditoria
-    data_atualizacao = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False) # Para auditoria
+    data_criacao = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    data_atualizacao = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     status = db.Column(db.String(20), nullable=False, default='ativa')
 
     entrega = db.relationship('Entrega', backref=db.backref('devolucoes', lazy=True))

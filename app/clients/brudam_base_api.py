@@ -1,9 +1,6 @@
 import requests
-import json
 import logging
-from urllib.parse import urljoin
-
-from config.settings import settings
+from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -14,91 +11,40 @@ class BrudamBaseAPI:
         self.password = password
         self.tracking_url_base = tracking_url_base
         self.token = None
+        self.name = "BrudamBase"
 
-        logging.getLogger(__name__).setLevel(logging.DEBUG) 
-
-    def _get_token(self) -> str | None:
-        headers = {
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "usuario": self.user, 
-            "senha": self.password
-        }
-
-        try:
-            logger.info(f"Tentando obter token Brudam em: {self.login_url}")
-            response = requests.post(self.login_url, headers=headers, data=json.dumps(payload), timeout=10)
-            response.raise_for_status() 
-            data = response.json()
-
-            token_key_path = ["access_key"] 
-            token = data
-            for key in token_key_path:
-                token = token.get(key)
-                if token is None: break
-
-            self.token = token
+    def _obter_token(self) -> str | None:
+        if self.token:
+            return self.token
         
-            if self.token:
-                logger.info("Token Brudam obtido com sucesso.")
-                return self.token
-            else:
-                logger.error(f"Token não encontrado na resposta Brudam. Resposta: {data}")
-                return None
-
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Erro de requisição ao obter token Brudam: {e}")
-            return None
-        except json.JSONDecodeError as e:
-            logger.error(f"Erro ao decodificar JSON ao obter token Brudam: {e} - Resposta: {response.text}")
-            return None
-        except Exception as e:
-            logger.error(f"Erro inesperado ao obter token Brudam: {e}")
-            return None
-
-    def _execute_tracking_request(self, chave: str, include_comprovante: bool = False) -> dict | None:
- 
-        if not self.token:
-            logger.debug("Token Brudam não disponível. Chamando _get_token()...")
-            if not self._get_token():
-                logger.error("Não foi possível obter o token Brudam. Abortando rastreamento.")
-                return None
+        headers = {'Content-Type': 'application/json'}
+        payload = {"usuario": self.user, "senha": self.password}
         
-        from config.settings import settings as current_settings
-        full_url = f"{self.tracking_url_base}{chave}"
-        if include_comprovante:
-            from config.settings import settings as current_settings 
-            comprovante_param = current_settings.BRUDAM_COMPROVANTE_PARAM
-            if comprovante_param:
-                full_url += comprovante_param
-            else:
-                logger.warning("Parâmetro COMPROVATE_BRUDAM não configurado no .env.")
-
-
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.token}" 
-        }
-
         try:
-            logger.debug(f"Requisição Brudam Tracking URL: {full_url}, Headers: {headers}")
-            response = requests.get(full_url, headers=headers, timeout=10)
-            logger.debug(f"Resposta Brudam Tracking Status: {response.status_code}, Texto: {response.text}")
-            response.raise_for_status() 
-            data = response.json()
-            
-            return data
+            response = requests.post(self.login_url, json=payload, headers=headers, timeout=10)
+            response.raise_for_status()
+            self.token = response.json().get("token")
+            logger.info(f"Token obtido com sucesso para a API {self.name}.")
+            return self.token
         except requests.exceptions.RequestException as e:
-            logger.error(f"Erro de requisição Brudam para chave {chave}: {e}")
-            if response.status_code == 401:
-                logger.warning("Token Brudam expirado ou inválido. Tentando renovar...")
-                self.token = None 
-                return self._execute_tracking_request(chave, include_comprovante) 
+            logger.error(f"Falha ao obter token para a API {self.name}: {e}")
             return None
-        except json.JSONDecodeError as e:
-            logger.error(f"Erro ao decodificar JSON Brudam para chave {chave}: {e} - Resposta: {response.text}")
+
+    def _execute_tracking_request(self, chave_nfe: str, include_comprovante: bool = False) -> dict | None:
+        token = self._obter_token()
+        if not token:
             return None
-        except Exception as e:
-            logger.error(f"Erro inesperado ao rastrear Brudam para chave {chave}: {e}")
+
+        url = f"{self.tracking_url_base}/{chave_nfe}"
+        headers = {'Authorization': f'Bearer {token}'}
+        
+        try:
+            response = requests.get(url, headers=headers, timeout=20)
+            if response.status_code == 404:
+                logger.warning(f"Nenhum dado de rastreamento encontrado para a chave {chave_nfe} na API {self.name}.")
+                return None
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Falha na requisição de rastreamento para a chave {chave_nfe} na API {self.name}: {e}")
             return None

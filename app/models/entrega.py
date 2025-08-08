@@ -1,7 +1,7 @@
 from app.extensions import db
 from datetime import datetime, date, timedelta
 from sqlalchemy.dialects.postgresql import ENUM
-from sqlalchemy.orm import relationship
+from sqlalchemy import ForeignKey
 from workalendar.america import Brazil
 
 ENTREGAS_STATUS = (
@@ -30,7 +30,6 @@ class Entrega(db.Model):
     EMAIL = db.Column(db.String(100), nullable=True)
     TELCOM = db.Column(db.String(20), nullable=True)
     EMAIL_1 = db.Column(db.String(100), nullable=True)
-    CODFORNECFRETE = db.Column(db.Integer, nullable=False)
     TRANSPORTADORA = db.Column(db.String(200), nullable=False)
     VLTOTAL = db.Column(db.Float(10, 2), nullable=False)
     NUMVOLUME = db.Column(db.Integer, nullable=False)
@@ -44,33 +43,29 @@ class Entrega(db.Model):
     PRAZOMEDIO = db.Column(db.Integer, nullable=True)
     AGENDAMENTO = db.Column(db.DateTime, nullable=True)
     DEVOLUCAO = db.Column(db.Boolean, nullable=False, default=False)
-    motorista_id = db.Column(db.Integer, db.ForeignKey('motoristas.id'), nullable=True)
-    motorista_responsavel = db.relationship('Motorista', backref=db.backref('entregas_atribuidas', lazy=True), overlaps="entregas")
     data_criacao = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     data_atualizacao = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-    motorista = db.relationship('Motorista', backref=db.backref('entregas', lazy=True), overlaps="entregas_atribuidas")
+    transportadora_cod = db.Column("CODFORNECFRETE", db.Integer, ForeignKey('transportadora.codfornecfrete'))
+    transportadora = db.relationship('Transportadora', back_populates='entregas', foreign_keys=[transportadora_cod])
+    
+    motorista_id = db.Column(db.Integer, db.ForeignKey('motoristas.id'), nullable=True)
+    motorista = db.relationship('Motorista', backref=db.backref('entregas', lazy=True))
+
+    comprovantes = db.relationship('Comprovante', backref='entrega', lazy=True, cascade="all, delete-orphan")
+    devolucoes = db.relationship('Devolucao', backref='entrega', lazy=True, cascade="all, delete-orphan")
+    rastreamentos = db.relationship('Rastreamento', backref='entrega', lazy=True, cascade="all, delete-orphan")
 
     def _get_working_days_between(self, start_dt: datetime, end_dt: datetime, feriados_customizados: list[date] = None) -> int:
         if not start_dt or not end_dt:
-            return None
+            return 0
         start_date_only = start_dt.date()
         end_date_only = end_dt.date()
         if end_date_only < start_date_only:
-           return 0
+            return 0
         cal = Brazil()
-        holidays_list = [h[0] for h in cal.holidays(start_date_only.year)]
-        if feriados_customizados:
-            holidays_list.extend(feriados_customizados)
-        
-        current_date = start_date_only
-        working_days_count = 0
-        while current_date <= end_date_only:
-            is_working = cal.is_working_day(current_date) and current_date not in holidays_list
-            if is_working:
-                working_days_count += 1
-            current_date += timedelta(days=1)
-        return working_days_count
+
+        return cal.get_working_days_delta(start_date_only, end_date_only)
 
     def calcular_status(self, feriados_customizados: list[date] = None):
         if not self.DTCARREGAMENTO:
@@ -89,51 +84,44 @@ class Entrega(db.Model):
                 return 'Entrega Pendente - Fora do prazo'
     
     def calcular_dias_atraso(self, feriados_customizados: list[date] = None):
-        today = datetime.now().date()
+        today = datetime.now()
         dias_atraso = 0
         data_referencia_atraso = self.AGENDAMENTO if self.AGENDAMENTO else self.PREVISAOENTREGA
-        if data_referencia_atraso: 
-            if self.DATAFINALIZACAO:
-                if self.DATAFINALIZACAO.date() > data_referencia_atraso.date():
-                    dias_atraso = self._get_working_days_between(data_referencia_atraso, self.DATAFINALIZACAO, feriados_customizados)
-                else: 
-                    dias_atraso = 0
-            else:
-                if today > data_referencia_atraso.date():
-                    dias_atraso = self._get_working_days_between(data_referencia_atraso, datetime.combine(today, datetime.min.time()), feriados_customizados)
-                else: 
-                    dias_atraso = 0
+        if not data_referencia_atraso:
+            return 0
+            
+        data_final = self.DATAFINALIZACAO if self.DATAFINALIZACAO else today
+
+        if data_final.date() > data_referencia_atraso.date():
+            dias_atraso = self._get_working_days_between(data_referencia_atraso, data_final, feriados_customizados)
+            
         return dias_atraso
 
     def calcular_prazo_medio(self, feriados_customizados: list[date] = None):
-        today = datetime.now().date()
-        prazo_medio = 0
-        if self.DTCARREGAMENTO: 
-            if self.DATAFINALIZACAO:
-                prazo_medio = self._get_working_days_between(self.DTCARREGAMENTO, self.DATAFINALIZACAO, feriados_customizados)
-            else:
-                prazo_medio = self._get_working_days_between(self.DTCARREGAMENTO, datetime.combine(today, datetime.min.time()), feriados_customizados)
+        if not self.DTCARREGAMENTO:
+            return 0
+        
+        data_final = self.DATAFINALIZACAO if self.DATAFINALIZACAO else datetime.now()
+        prazo_medio = self._get_working_days_between(self.DTCARREGAMENTO, data_final, feriados_customizados)
         return prazo_medio
     
     def to_dict(self, feriados_customizados: list[date] = None):
         data = {c.name: getattr(self, c.name) for c in self.__table__.columns}
         
         for key, value in data.items():
-            if isinstance(value, datetime):
-                data[key] = value.strftime('%Y-%m-%d %H:%M:%S')
-            elif isinstance(value, date):
-                data[key] = value.strftime('%Y-%m-%d')
+            if isinstance(value, (datetime, date)):
+                data[key] = value.isoformat()
         
         data['STATUS'] = self.calcular_status(feriados_customizados)
         data['DIASATRASO'] = self.calcular_dias_atraso(feriados_customizados)
         data['PRAZOMEDIO'] = self.calcular_prazo_medio(feriados_customizados)
 
-        if self.motorista_responsavel:
-            data['motorista_nome'] = self.motorista_responsavel.nome
+        if self.motorista:
+            data['motorista_nome'] = self.motorista.nome
         else:
             data['motorista_nome'] = None
 
         return data
 
     def __repr__(self):
-        return f'<Entrega {self.id} - Cliente: {self.CLIENTE}>'
+        return f'<Entrega {self.NUMNOTA}>'

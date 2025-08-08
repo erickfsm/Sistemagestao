@@ -4,15 +4,15 @@ import logging
 from datetime import datetime
 from urllib.parse import urljoin 
 
-from config.settings import settings 
+from config import Config
 
 logger = logging.getLogger(__name__)
 
 class MIXAPI:
     def __init__(self):
-        self.login_url = settings.MIX_LOGIN_URL
-        self.tracking_url = settings.MIX_TRACKING_URL
-        self.auth = settings.MIX_AUTH_BASE64
+        self.login_url = Config.MIX_LOGIN_URL
+        self.tracking_url = Config.MIX_TRACKING_URL
+        self.auth = Config.MIX_AUTH_BASE64
         self.token = None
 
     def _get_token(self) -> str | None:

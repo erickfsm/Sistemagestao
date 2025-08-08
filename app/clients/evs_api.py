@@ -1,23 +1,23 @@
 import requests
 import json
-from config.settings import settings
+from config import Config
 from urllib.parse import quote_plus
 import logging
 from urllib.parse import quote_plus
 from datetime import datetime, date
 
-from src.utils.file_handler import download_and_save_comprovante
+from app.utils.file_handler import baixar_e_salvar_comprovante
 
 logger = logging.getLogger(__name__)
 
 class EVSAPI:
     def __init__(self):
-        self.login_url = settings.EVS_LOGIN_URL
-        self.base_url = settings.EVS_BASE_API_URL
-        self.api_version = settings.EVS_API_VERSION
-        self.user = settings.EVS_USER
-        self.senha = settings.EVS_PASS
-        self.sigla = settings.EVS_SIGLA
+        self.login_url = Config.EVS_LOGIN_URL
+        self.base_url = Config.EVS_BASE_API_URL
+        self.api_version = Config.EVS_API_VERSION
+        self.user = Config.EVS_USER
+        self.senha = Config.EVS_PASS
+        self.sigla = Config.EVS_SIGLA
         self.token = None
 
     def _get_token(self) -> str | None:
