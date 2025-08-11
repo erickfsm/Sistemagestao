@@ -11,8 +11,8 @@ class Comprovante(db.Model):
     caminho_arquivo = db.Column(db.String(255), nullable=False)
     data_envio = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
-    entrega = db.relationship('Entrega', backref=db.backref('comprovantes', lazy=True))
-    motorista = db.relationship('Motorista', backref=db.backref('comprovantes_enviados', lazy=True))
+    entrega = db.relationship('Entrega', back_populates='comprovantes')
+    motorista = db.relationship('Motorista',  back_populates='comprovantes')
 
     def to_dict(self):
         return {

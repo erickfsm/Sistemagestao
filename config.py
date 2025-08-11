@@ -81,9 +81,11 @@ class Config:
     if not os.path.exists(COMPROVANTES_DIR):
         os.makedirs(COMPROVANTES_DIR)
 
-    FILIAL_1_CNPJ = os.getenv("FILIAL_1")
-    FILIAL_2_CNPJ = os.getenv("FILIAL_2")
-    FILIAL_3_CNPJ = os.getenv("FILIAL_3")
+    FILIAL_CNPJ_MAP = {
+        1: os.getenv("FILIAL_1"),
+        2: os.getenv("FILIAL_2"),
+        3: os.getenv("FILIAL_3"),
+    }
 
 config = Config()
     

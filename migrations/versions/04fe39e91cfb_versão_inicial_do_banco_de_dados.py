@@ -1,8 +1,8 @@
-"""Criação inicial das tabelas com SQLite
+"""Versão inicial do banco de dados
 
-Revision ID: 8dbdd40c2d04
+Revision ID: 04fe39e91cfb
 Revises: 
-Create Date: 2025-08-08 10:58:11.021625
+Create Date: 2025-08-09 21:54:11.734549
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = '8dbdd40c2d04'
+revision = '04fe39e91cfb'
 down_revision = None
 branch_labels = None
 depends_on = None

@@ -1,8 +1,10 @@
 from datetime import datetime, date, timedelta
 from workalendar.america import Brazil
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, current_app, request, jsonify
 from app.extensions import db
+from app.jobs import tarefa_rastreamento_especifico 
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from app.models.rastreamento import Rastreamento
 from app.utils.decorators import role_required
 import pandas as pd
 import io
@@ -107,7 +109,8 @@ def criar_entrega_com_dados(data: dict):
         nova_entrega.CODFORNECFRETE = int(nova_entrega.CODFORNECFRETE)
     if nova_entrega.motorista_id is not None:
         nova_entrega.motorista_id = int(nova_entrega.motorista_id)
-        
+    
+    nova_entrega.definir_previsao_entrega()
     db.session.add(nova_entrega)
     return nova_entrega
 
@@ -162,16 +165,18 @@ def importar_excel():
             df = pd.read_csv(file_stream)
         else:
             return jsonify({"message": "Formato de arquivo não suportado. Use .xlsx, .xls ou .csv."}), 400
+       
     except Exception as e:
         return jsonify({"mensagem": f"Erro ao ler o arquivo: {str(e)}"}), 500
     
     try:
         required_excel_cols = ["CODFILIAL", "DTFAT", "DTCARREGAMENTO", "ROMANEIO", "TIPOVENDA", 
                               "NUMNOTA", "NUMPED", "CODCLI", "CLIENTE", "MUNICIPIO", "UF", 
-                              "VLTOTAL", "NUMVOLUME", "TOTPESO", "PRAZOENTREGA", "CHAVENFE"]
+                              "VLTOTAL", "NUMVOLUME", "TOTPESO", "PRAZOENTREGA", "CHAVENFE", "CODFORNECFRETE"]
         
         if not all(col in df.columns for col in required_excel_cols):
-            return jsonify({"message": "Arquivo Excel não possui todas as colunas obrigatórias."}), 400
+            missing_cols = [col for col in required_excel_cols if col not in df.columns]
+            return jsonify({"mensagem": f"Arquivo Excel não possui todas as colunas obrigatórias. Faltando: {', '.join(missing_cols)}"}), 400
 
         entregas_importadas = []
         for index, row in df.iterrows():
@@ -184,17 +189,39 @@ def importar_excel():
                 if isinstance(data_entrega.get(date_field), datetime):
                     data_entrega[date_field] = data_entrega[date_field].strftime('%Y-%m-%d %H:%M:%S')
 
-            nova_entrega = criar_entrega_com_dados(data_entrega)
-            entregas_importadas.append(nova_entrega)
+            nova_entrega = Entrega(
+                CODFILIAL=row['CODFILIAL'],
+                DTFAT=pd.to_datetime(row['DTFAT']),
+                DTCARREGAMENTO=pd.to_datetime(row['DTCARREGAMENTO']),
+                ROMANEIO=row['ROMANEIO'],
+                TIPOVENDA=row['TIPOVENDA'],
+                NUMNOTA=row['NUMNOTA'],
+                NUMPED=row['NUMPED'],
+                CODCLI=row['CODCLI'],
+                CLIENTE=row['CLIENTE'],
+                MUNICIPIO=row['MUNICIPIO'],
+                UF=row['UF'],
+                VLTOTAL=row['VLTOTAL'],
+                NUMVOLUME=row['NUMVOLUME'],
+                TOTPESO=row['TOTPESO'],
+                PRAZOENTREGA=row['PRAZOENTREGA'],
+                CHAVENFE=row['CHAVENFE'],
+                transportadora_cod=int(row['CODFORNECFRETE']),
+                TRANSPORTADORA=row['TRANSPORTADORA']
+            )
+           
+            db.session.add(nova_entrega) 
         
         db.session.commit()
-        return jsonify({
-            "message": f"{len(entregas_importadas)} entregas importadas com sucesso!",
-            "entregas": [e.to_dict() for e in entregas_importadas]
-        }), 201
+        
+        return jsonify({"mensagem": f"{len(df)} linhas processadas. Entregas novas e atualizadas foram salvas."}), 200
 
+    except KeyError as e:
+        db.session.rollback()
+        return jsonify({"mensagem": f"Erro de processamento: a coluna {str(e)} não foi encontrada no arquivo."}), 500
     except Exception as e:
         db.session.rollback()
+        print(f"ERRO COMPLETO: {e}") 
         return jsonify({"mensagem": f"Erro ao processar o arquivo: {str(e)}"}), 500
 
 @entrega_bp.route('/<int:id>', methods=['GET'])
@@ -377,3 +404,36 @@ def listar_todas_entregas():
         return jsonify([]), 200
 
     return jsonify(entregas_json), 200
+
+
+@entrega_bp.route('/<int:entrega_id>/atualizar-rastreamento', methods=['POST'])
+@jwt_required()
+def atualizar_rastreamento_manual(entrega_id):
+    try:
+        tarefa_rastreamento_especifico(current_app._get_current_object(), entrega_id)
+        
+        entrega_atualizada = Entrega.query.get(entrega_id)
+        if entrega_atualizada:
+            return jsonify({
+                "mensagem": "Rastreamento atualizado com sucesso.",
+                "status": entrega_atualizada.status 
+            }), 200
+        else:
+             return jsonify({"mensagem": "Atualização solicitada, mas a entrega não foi encontrada."}), 404
+
+    except Exception as e:
+        print(f"Erro inesperado ao atualizar rastreamento para entrega {entrega_id}: {e}")
+        return jsonify({"erro": "Ocorreu um erro interno ao processar a solicitação."}), 500
+    
+
+@entrega_bp.route('/<int:entrega_id>/devolucoes', methods=['GET'])
+@jwt_required()
+def get_devolucoes_por_entrega(entrega_id):
+    devolucoes = Devolucao.query.filter_by(entrega_id=entrega_id).all()
+    return jsonify([d.to_dict() for d in devolucoes])
+
+@entrega_bp.route('/<int:entrega_id>/rastreamento', methods=['GET'])
+@jwt_required()
+def get_rastreamento_por_entrega(entrega_id):
+    rastreamentos = Rastreamento.query.filter_by(entrega_id=entrega_id).order_by(Rastreamento.timestamp.desc()).all()
+    return jsonify([r.to_dict() for r in rastreamentos])

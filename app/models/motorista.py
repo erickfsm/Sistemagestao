@@ -12,6 +12,10 @@ class Motorista(db.Model):
     data_criacao = db.Column(db.DateTime, default=db.func.current_timestamp())
     data_atualizacao = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
 
+    comprovantes = db.relationship('Comprovante', back_populates='motorista', lazy='dynamic')
+    devolucoes = db.relationship('Devolucao', back_populates='motorista', lazy='dynamic')
+    entregas = db.relationship('Entrega', back_populates='motorista', lazy='dynamic')
+
     def set_password(self, password):
         self.senha_hash = generate_password_hash(password)
 

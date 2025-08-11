@@ -16,8 +16,8 @@ class Devolucao(db.Model):
     data_atualizacao = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     status = db.Column(db.String(20), nullable=False, default='ativa')
 
-    entrega = db.relationship('Entrega', backref=db.backref('devolucoes', lazy=True))
-    motorista = db.relationship('Motorista', backref=db.backref('devolucoes', lazy=True))
+    entrega = db.relationship('Entrega', back_populates='devolucoes')
+    motorista = db.relationship('Motorista', back_populates='devolucoes')
 
     def to_dict(self):
         return {

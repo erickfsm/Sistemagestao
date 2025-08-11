@@ -34,7 +34,7 @@ class SSWAPI:
 
         payload = {
             "cnpj": cnpj_limpo, 
-            "senha": self.senha_ampla,
+            "senha": senha_para_uso,
             "nro_nf": num_nota
         }
 

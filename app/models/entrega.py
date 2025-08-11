@@ -30,6 +30,8 @@ class Entrega(db.Model):
     EMAIL = db.Column(db.String(100), nullable=True)
     TELCOM = db.Column(db.String(20), nullable=True)
     EMAIL_1 = db.Column(db.String(100), nullable=True)
+    VENDEDOR = db.Column(db.String(100), nullable=True)
+    transportadora_cod = db.Column("CODFORNECFRETE", db.Integer, ForeignKey('transportadora.codfornecfrete'))
     TRANSPORTADORA = db.Column(db.String(200), nullable=False)
     VLTOTAL = db.Column(db.Float(10, 2), nullable=False)
     NUMVOLUME = db.Column(db.Integer, nullable=False)
@@ -46,15 +48,17 @@ class Entrega(db.Model):
     data_criacao = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     data_atualizacao = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-    transportadora_cod = db.Column("CODFORNECFRETE", db.Integer, ForeignKey('transportadora.codfornecfrete'))
     transportadora = db.relationship('Transportadora', back_populates='entregas', foreign_keys=[transportadora_cod])
-    
     motorista_id = db.Column(db.Integer, db.ForeignKey('motoristas.id'), nullable=True)
-    motorista = db.relationship('Motorista', backref=db.backref('entregas', lazy=True))
+    motorista = db.relationship('Motorista', back_populates='entregas')
 
-    comprovantes = db.relationship('Comprovante', backref='entrega', lazy=True, cascade="all, delete-orphan")
-    devolucoes = db.relationship('Devolucao', backref='entrega', lazy=True, cascade="all, delete-orphan")
-    rastreamentos = db.relationship('Rastreamento', backref='entrega', lazy=True, cascade="all, delete-orphan")
+    agendamento_motivo = db.Column(db.String(255), nullable=True)
+    ultimo_usuario_id = db.Column(db.Integer, db.ForeignKey('usuarios.id'), nullable=True)
+    ultimo_usuario = db.relationship('Usuario')
+
+    comprovantes = db.relationship('Comprovante', back_populates='entrega', cascade="all, delete-orphan")
+    devolucoes = db.relationship('Devolucao', back_populates='entrega', cascade="all, delete-orphan")
+    rastreamentos = db.relationship('Rastreamento', back_populates='entrega', lazy='dynamic')
 
     def _get_working_days_between(self, start_dt: datetime, end_dt: datetime, feriados_customizados: list[date] = None) -> int:
         if not start_dt or not end_dt:
@@ -66,6 +70,11 @@ class Entrega(db.Model):
         cal = Brazil()
 
         return cal.get_working_days_delta(start_date_only, end_date_only)
+    
+    def definir_previsao_entrega(self):
+         if self.DTCARREGAMENTO and self.PRAZOENTREGA:
+            cal = Brazil()
+            self.PREVISAOENTREGA = cal.add_working_days(self.DTCARREGAMENTO.date(), self.PRAZOENTREGA)
 
     def calcular_status(self, feriados_customizados: list[date] = None):
         if not self.DTCARREGAMENTO:
@@ -106,7 +115,38 @@ class Entrega(db.Model):
         return prazo_medio
     
     def to_dict(self, feriados_customizados: list[date] = None):
-        data = {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        data = {
+            'id': self.id,
+            'CODFILIAL': self.CODFILIAL,
+            'DTFAT': self.DTFAT.isoformat() if self.DTFAT else None,
+            'DTCARREGAMENTO': self.DTCARREGAMENTO.isoformat() if self.DTCARREGAMENTO else None,
+            'ROMANEIO': self.ROMANEIO,
+            'TIPOVENDA': self.TIPOVENDA,
+            'NUMNOTA': self.NUMNOTA,
+            'NUMPED': self.NUMPED,
+            'CODCLI': self.CODCLI,
+            'CLIENTE': self.CLIENTE,
+            'MUNICIPIO': self.MUNICIPIO,
+            'UF': self.UF,
+            'EMAIL': self.EMAIL,
+            'TELCOM': self.TELCOM,
+            'EMAIL_1': self.EMAIL_1,
+            'VENDEDOR': self.VENDEDOR,
+            'CODFORNECFRETE': self.transportadora_cod,  # <-- A CORREÇÃO PRINCIPAL!
+            'TRANSPORTADORA': self.TRANSPORTADORA,
+            'VLTOTAL': self.VLTOTAL,
+            'NUMVOLUME': self.NUMVOLUME,
+            'TOTPESO': self.TOTPESO,
+            'PRAZOENTREGA': self.PRAZOENTREGA,
+            'CHAVENFE': self.CHAVENFE,
+            'PREVISAOENTREGA': self.PREVISAOENTREGA.isoformat() if self.PREVISAOENTREGA else None,
+            'DATAFINALIZACAO': self.DATAFINALIZACAO.isoformat() if self.DATAFINALIZACAO else None,
+            'AGENDAMENTO': self.AGENDAMENTO.isoformat() if self.AGENDAMENTO else None,
+            'DEVOLUCAO': self.DEVOLUCAO,
+            'data_criacao': self.data_criacao.isoformat() if self.data_criacao else None,
+            'data_atualizacao': self.data_atualizacao.isoformat() if self.data_atualizacao else None,
+            'motorista_id': self.motorista_id
+        }
         
         for key, value in data.items():
             if isinstance(value, (datetime, date)):

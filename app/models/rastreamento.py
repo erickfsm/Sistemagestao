@@ -9,7 +9,8 @@ class Rastreamento(db.Model):
     status_descricao = db.Column(db.String(200), nullable=False)
     localizacao = db.Column(db.String(150), nullable=True)
     
-    entrega_id = db.Column(db.Integer, db.ForeignKey('entregas.id'), nullable=False)
+    entrega_id = db.Column(db.Integer, db.ForeignKey('entregas.id'))
+    entrega = db.relationship('Entrega', back_populates='rastreamentos')
     
     def __repr__(self):
         return f'<Rastreamento {self.id} - {self.status_descricao}>'

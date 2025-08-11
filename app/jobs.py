@@ -1,10 +1,13 @@
 from datetime import datetime, date
 from flask import Flask
+from config import Config
+from app.extensions import db
+from .models import Entrega, Rastreamento
+
 from .clients.acette_api import AcetteAPI
 from .clients.evs_api import EVSAPI
 from .clients.mix_api import MIXAPI
 from .clients.ssw_api import SSWAPI
-from .extensions import db
 
 API_CLIENTS = {
     'ACETTE': AcetteAPI,
@@ -15,9 +18,7 @@ API_CLIENTS = {
 }
 
 def tarefa_rastreamento_especifico(app: Flask, entrega_id: int):
-
     with app.app_context():
-        from .models import Entrega, Rastreamento
         print(f"Executando rastreamento agendado para a entrega ID: {entrega_id}")
         entrega = db.session.get(Entrega, entrega_id)
 
@@ -36,6 +37,22 @@ def tarefa_rastreamento_especifico(app: Flask, entrega_id: int):
             api_client = ApiClientClass()
             dados_padronizados = api_client.rastrear_nf(entrega.CHAVENFE)
  
+            if identifier == 'SSW':
+                cnpj_filial = Config.FILIAL_CNPJ_MAP.get(entrega.CODFILIAL)
+                tipo_servico = entrega.transportadora.api_config_key
+
+                if not cnpj_filial or not tipo_servico:
+                    print(f"CNPJ da filial ou tipo de serviço SSW não configurado para entrega {entrega.id}")
+                    return
+
+                dados_padronizados = api_client.rastrear_nf(
+                    num_nota=entrega.NUMNOTA,
+                    cnpj_filial=cnpj_filial,
+                    tipo_ssw_servico=tipo_servico
+                )
+            else:
+                dados_padronizados = api_client.rastrear_nf(chave_nfe=entrega.CHAVENFE)
+
             if dados_padronizados and dados_padronizados.get("eventos"):
                 Rastreamento.query.filter_by(entrega_id=entrega_id).delete()
                 for evento in dados_padronizados["eventos"]:
@@ -52,7 +69,6 @@ def tarefa_rastreamento_especifico(app: Flask, entrega_id: int):
                 print(f"Rastreamento da entrega {entrega_id} atualizado com sucesso.")
         except Exception as e:
             print(f"Erro ao processar a API para a entrega {entrega_id}: {e}")
-
 
 def tarefa_de_verificacao_diaria(app: Flask, scheduler):
     with app.app_context():
